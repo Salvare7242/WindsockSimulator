@@ -1,0 +1,869 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-slate-900 text-slate-100">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Aviation Windsock Simulator</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Three.js Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- OrbitControls -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <!-- FontAwesome Icons -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/js/all.min.js"></script>
+    <!-- Inter Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        canvas { display: block; outline: none; }
+        /* Custom scrollbars for control panel */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.6); }
+        ::-webkit-scrollbar-thumb { background: rgba(51, 65, 85, 0.8); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(71, 85, 105, 1); }
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.75);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+    </style>
+</head>
+<body class="h-full overflow-hidden select-none flex flex-col md:flex-row">
+
+    <!-- 3D Render Canvas Container -->
+    <div id="canvas-container" class="relative flex-1 h-full w-full bg-slate-950">
+        
+        <!-- Top Overlay Telemetry Bar -->
+        <div class="absolute top-4 left-4 right-4 md:right-auto flex flex-wrap gap-3 z-10 pointer-events-none">
+            <div class="glass-panel px-4 py-2.5 rounded-xl flex items-center gap-3 shadow-lg pointer-events-auto">
+                <div class="w-10 h-10 rounded-lg bg-orange-500/20 border border-orange-500/40 flex items-center justify-center text-orange-400">
+                    <i class="fa-solid font-bold text-lg fa-wind"></i>
+                </div>
+                <div>
+                    <div class="text-xs uppercase tracking-wider text-slate-400 font-semibold">Wind Speed</div>
+                    <div class="text-xl font-bold font-mono text-white flex items-baseline gap-1">
+                        <span id="speed-val-display">12.0</span>
+                        <span class="text-xs text-orange-400 font-sans">kts</span>
+                        <span class="text-xs text-slate-400 font-sans ml-1">(<span id="speed-kmh-display">22</span> km/h)</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="glass-panel px-4 py-2.5 rounded-xl flex items-center gap-3 shadow-lg pointer-events-auto">
+                <div class="w-10 h-10 rounded-lg bg-blue-500/20 border border-blue-500/40 flex items-center justify-center text-blue-400">
+                    <i class="fa-solid fa-compass text-lg" id="compass-icon"></i>
+                </div>
+                <div>
+                    <div class="text-xs uppercase tracking-wider text-slate-400 font-semibold">Direction</div>
+                    <div class="text-xl font-bold font-mono text-white flex items-baseline gap-1">
+                        <span id="dir-val-display">240</span>°
+                        <span id="cardinal-display" class="text-xs text-blue-400 font-sans font-semibold ml-1">WSW</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="glass-panel px-4 py-2.5 rounded-xl flex items-center gap-3 shadow-lg pointer-events-auto hidden sm:flex">
+                <div class="w-10 h-10 rounded-lg bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
+                    <i class="fa-solid fa-ruler-horizontal text-lg"></i>
+                </div>
+                <div>
+                    <div class="text-xs uppercase tracking-wider text-slate-400 font-semibold">Sock Extension</div>
+                    <div class="text-xl font-bold font-mono text-emerald-400 flex items-baseline gap-1">
+                        <span id="extension-display">80</span>%
+                        <span class="text-xs text-slate-400 font-sans ml-1" id="stripe-count-display">(~12 knots)</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Camera Control Toolbar (Bottom Left) -->
+        <div class="absolute bottom-4 left-4 z-10 flex gap-2 glass-panel p-1.5 rounded-xl">
+            <button id="cam-orbit" title="Orbit View" class="px-3 py-2 rounded-lg text-xs font-medium bg-slate-800 text-white hover:bg-slate-700 transition flex items-center gap-1.5 border border-slate-700">
+                <i class="fa-solid fa-video"></i> Orbit
+            </button>
+            <button id="cam-close" title="Close-Up" class="px-3 py-2 rounded-lg text-xs font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition flex items-center gap-1.5">
+                <i class="fa-solid fa-magnifying-glass font-bold"></i> Close-Up
+            </button>
+            <button id="cam-runway" title="Runway View" class="px-3 py-2 rounded-lg text-xs font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition flex items-center gap-1.5">
+                <i class="fa-solid fa-plane-arrival"></i> Runway
+            </button>
+            <button id="cam-top" title="Top-Down View" class="px-3 py-2 rounded-lg text-xs font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition flex items-center gap-1.5">
+                <i class="fa-solid fa-arrow-down"></i> Top
+            </button>
+        </div>
+
+        <!-- 3D Canvas Canvas will be dynamically injected here -->
+    </div>
+
+    <!-- Control Sidebar -->
+    <div class="w-full md:w-96 glass-panel border-l border-slate-800 flex flex-col h-auto md:h-full z-20 overflow-y-auto">
+        <!-- Sidebar Header -->
+        <div class="p-5 border-b border-slate-800/80 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-9 h-9 rounded-lg bg-orange-500 flex items-center justify-center text-slate-950 font-black shadow-lg shadow-orange-500/20">
+                    <i class="fa-solid fa-flag"></i>
+                </div>
+                <div>
+                    <h1 class="font-bold text-base text-white tracking-wide">3D Windsock Simulator</h1>
+                    <p class="text-xs text-slate-400">FAA Standard Aerodrome Wind Cone</p>
+                </div>
+            </div>
+            <button id="toggle-info-btn" class="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center transition" title="Aviation Info">
+                <i class="fa-solid fa-circle-info"></i>
+            </button>
+        </div>
+
+        <!-- Control Sections -->
+        <div class="p-5 space-y-6 flex-1">
+
+            <!-- Weather Presets -->
+            <div>
+                <label class="text-xs font-semibold uppercase tracking-wider text-slate-400 block mb-2.5">Weather Presets</label>
+                <div class="grid grid-cols-2 gap-2">
+                    <button class="preset-btn px-3 py-2 bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700 rounded-lg text-xs text-left transition font-medium text-slate-200" data-speed="2" data-dir="90" data-turb="0.1">
+                        <i class="fa-solid fa-leaf text-emerald-400 mr-1.5"></i> Light Calm (2 kt)
+                    </button>
+                    <button class="preset-btn px-3 py-2 bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700 rounded-lg text-xs text-left transition font-medium text-slate-200" data-speed="9" data-dir="180" data-turb="0.3">
+                        <i class="fa-solid fa-wind text-blue-400 mr-1.5"></i> Gentle Breeze (9 kt)
+                    </button>
+                    <button class="preset-btn px-3 py-2 bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700 rounded-lg text-xs text-left transition font-medium text-slate-200" data-speed="15" data-dir="240" data-turb="0.5">
+                        <i class="fa-solid fa-flag text-orange-400 mr-1.5"></i> Full Extension (15 kt)
+                    </button>
+                    <button class="preset-btn px-3 py-2 bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700 rounded-lg text-xs text-left transition font-medium text-slate-200" data-speed="28" data-dir="310" data-turb="0.9">
+                        <i class="fa-solid fa-bolt text-red-400 mr-1.5"></i> Gusty Gale (28 kt)
+                    </button>
+                </div>
+            </div>
+
+            <!-- Wind Sliders -->
+            <div class="space-y-4 bg-slate-900/60 p-4 rounded-xl border border-slate-800">
+                <!-- Wind Speed Slider -->
+                <div>
+                    <div class="flex justify-between text-xs mb-1.5">
+                        <span class="text-slate-300 font-medium">Wind Velocity</span>
+                        <span class="font-mono text-orange-400 font-bold" id="slider-speed-label">12 knots</span>
+                    </div>
+                    <input type="range" id="wind-speed" min="0" max="35" step="0.5" value="12" class="w-full accent-orange-500 bg-slate-800 h-2 rounded-lg cursor-pointer">
+                    <div class="flex justify-between text-[10px] text-slate-500 mt-1 font-mono">
+                        <span>0 kt (Limp)</span>
+                        <span>15 kt (Full)</span>
+                        <span>35 kt (Storm)</span>
+                    </div>
+                </div>
+
+                <!-- Wind Direction Slider -->
+                <div>
+                    <div class="flex justify-between text-xs mb-1.5">
+                        <span class="text-slate-300 font-medium">Wind Direction (From)</span>
+                        <span class="font-mono text-blue-400 font-bold" id="slider-dir-label">240° (WSW)</span>
+                    </div>
+                    <input type="range" id="wind-dir" min="0" max="359" step="1" value="240" class="w-full accent-blue-500 bg-slate-800 h-2 rounded-lg cursor-pointer">
+                    <div class="flex justify-between text-[10px] text-slate-500 mt-1 font-mono">
+                        <span>N (0°)</span>
+                        <span>E (90°)</span>
+                        <span>S (180°)</span>
+                        <span>W (270°)</span>
+                    </div>
+                </div>
+
+                <!-- Turbulence Slider -->
+                <div>
+                    <div class="flex justify-between text-xs mb-1.5">
+                        <span class="text-slate-300 font-medium">Turbulence / Gustiness</span>
+                        <span class="font-mono text-purple-400 font-bold" id="slider-turb-label">Moderate</span>
+                    </div>
+                    <input type="range" id="wind-turb" min="0" max="1" step="0.05" value="0.4" class="w-full accent-purple-500 bg-slate-800 h-2 rounded-lg cursor-pointer">
+                </div>
+            </div>
+
+            <!-- Simulation Visual Helpers Toggles -->
+            <div>
+                <label class="text-xs font-semibold uppercase tracking-wider text-slate-400 block mb-2.5">Visual Helpers</label>
+                <div class="space-y-2">
+                    <label class="flex items-center justify-between p-2.5 bg-slate-900/40 hover:bg-slate-900/80 rounded-lg cursor-pointer border border-slate-800 transition">
+                        <span class="text-xs text-slate-300 flex items-center gap-2">
+                            <i class="fa-solid fa-water text-cyan-400 w-4"></i> Wind Flow Particles
+                        </span>
+                        <input type="checkbox" id="toggle-particles" checked class="w-4 h-4 rounded accent-orange-500">
+                    </label>
+
+                    <label class="flex items-center justify-between p-2.5 bg-slate-900/40 hover:bg-slate-900/80 rounded-lg cursor-pointer border border-slate-800 transition">
+                        <span class="text-xs text-slate-300 flex items-center gap-2">
+                            <i class="fa-solid fa-moon text-indigo-400 w-4"></i> Night Mode / Field Lights
+                        </span>
+                        <input type="checkbox" id="toggle-night" class="w-4 h-4 rounded accent-orange-500">
+                    </label>
+
+                    <label class="flex items-center justify-between p-2.5 bg-slate-900/40 hover:bg-slate-900/80 rounded-lg cursor-pointer border border-slate-800 transition">
+                        <span class="text-xs text-slate-300 flex items-center gap-2">
+                            <i class="fa-solid fa-border-all text-slate-400 w-4"></i> Wireframe Mesh
+                        </span>
+                        <input type="checkbox" id="toggle-wireframe" class="w-4 h-4 rounded accent-orange-500">
+                    </label>
+                </div>
+            </div>
+
+            <!-- Aviation Windsock Rules Educational Guide -->
+            <div id="info-modal" class="bg-slate-900/90 p-4 rounded-xl border border-slate-700/80 text-xs text-slate-300 space-y-2">
+                <div class="font-bold text-white flex items-center gap-2 text-sm border-b border-slate-800 pb-2">
+                    <i class="fa-solid fa-circle-info text-orange-400"></i> FAA Standard Windsock Guide
+                </div>
+                <p>Standard aviation windsocks consist of <strong>5 alternating orange & white stripes</strong>.</p>
+                <ul class="space-y-1 pl-4 list-disc text-slate-400">
+                    <li><strong class="text-slate-200">3 Knots (~5.5 km/h):</strong> Windsock swivels & first segment inflates.</li>
+                    <li><strong class="text-slate-200">6 Knots:</strong> First 2 segments extended.</li>
+                    <li><strong class="text-slate-200">9 Knots:</strong> 3 segments extended.</li>
+                    <li><strong class="text-slate-200">12 Knots:</strong> 4 segments extended.</li>
+                    <li><strong class="text-slate-200">15+ Knots (28 km/h):</strong> Fully extended horizontally.</li>
+                </ul>
+                <div class="text-[11px] text-slate-500 italic mt-2">Note: The sock points DOWNWIND (away from the direction wind is blowing from).</div>
+            </div>
+
+        </div>
+
+        <!-- Footer -->
+        <div class="p-4 border-t border-slate-800 text-center text-xs text-slate-500">
+            Interactive 3D WebGL Simulation • Three.js
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let container, scene, camera, renderer, controls;
+        let windsockMesh, windsockSegments = [];
+        let swivelGroup, windsockGroup;
+        let windParticles, particleGeometry, particlePositions, particleVelocities;
+        let directionalLight, ambientLight, groundMesh, runwayMesh, circleSegmentMesh;
+        let runwayLights = [];
+
+        // Simulation parameters state
+        const state = {
+            windSpeed: 12.0,       // in knots
+            windDirection: 240,    // degrees (where wind is coming FROM)
+            turbulence: 0.4,       // 0 to 1
+            showParticles: true,
+            nightMode: false,
+            wireframe: false,
+            sockAngle: 0,          // current yaw of swivel head
+            time: 0
+        };
+
+        // Aviation Windsock Mesh Dimensions
+        const SOCK_LENGTH = 3.6;
+        const RADIUS_TOP = 0.45;
+        const RADIUS_BOTTOM = 0.15;
+        const RADIAL_SEGMENTS = 24;
+        const HEIGHT_SEGMENTS = 32;
+
+        // Colors
+        const COLOR_ORANGE = 0xFF5500;
+        const COLOR_WHITE = 0xF0F4F8;
+
+        function initScene() {
+            container = document.getElementById('canvas-container');
+
+            // Scene setup
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x87CEEB); // Sky blue
+            scene.fog = new THREE.FogExp2(0x87CEEB, 0.008);
+
+            // Camera setup
+            camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 500);
+            camera.position.set(6, 4, 8);
+
+            // Renderer setup
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            container.appendChild(renderer.domElement);
+
+            // Orbit Controls
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.maxPolarAngle = Math.PI / 2 - 0.02; // Don't go below ground
+            controls.minDistance = 2;
+            controls.maxDistance = 60;
+            controls.target.set(0, 2.5, 0);
+
+            // Lighting setup
+            ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+
+            directionalLight = new THREE.DirectionalLight(0xffffff, 1.2);
+            directionalLight.position.set(15, 25, 15);
+            directionalLight.castShadow = true;
+            directionalLight.shadow.mapSize.width = 2048;
+            directionalLight.shadow.mapSize.height = 2048;
+            directionalLight.shadow.camera.near = 0.5;
+            directionalLight.shadow.camera.far = 80;
+            const d = 15;
+            directionalLight.shadow.camera.left = -d;
+            directionalLight.shadow.camera.right = d;
+            directionalLight.shadow.camera.top = d;
+            directionalLight.shadow.camera.bottom = -d;
+            directionalLight.shadow.bias = -0.0005;
+            scene.add(directionalLight);
+
+            // Create Airfield & Pole Objects
+            createEnvironment();
+            createWindsockPoleAndMesh();
+            createWindParticles();
+
+            // Handle window resizing
+            window.addEventListener('resize', onWindowResize);
+        }
+
+        function createEnvironment() {
+            // Ground Plane (Grass)
+            const groundGeo = new THREE.PlaneGeometry(200, 200);
+            const groundMat = new THREE.MeshStandardMaterial({
+                color: 0x3d6e35,
+                roughness: 0.9,
+                metalness: 0.1
+            });
+            groundMesh = new THREE.Mesh(groundGeo, groundMat);
+            groundMesh.rotation.x = -Math.PI / 2;
+            groundMesh.receiveShadow = true;
+            scene.add(groundMesh);
+
+            // Runway Tarmac
+            const runwayGeo = new THREE.PlaneGeometry(14, 160);
+            const runwayMat = new THREE.MeshStandardMaterial({
+                color: 0x22252a,
+                roughness: 0.8
+            });
+            runwayMesh = new THREE.Mesh(runwayGeo, runwayMat);
+            runwayMesh.rotation.x = -Math.PI / 2;
+            runwayMesh.position.set(-18, 0.01, 0);
+            runwayMesh.receiveShadow = true;
+            scene.add(runwayMesh);
+
+            // Runway Center Stripe Markings
+            for (let z = -70; z <= 70; z += 10) {
+                const stripeGeo = new THREE.PlaneGeometry(0.6, 5);
+                const stripeMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+                const stripe = new THREE.Mesh(stripeGeo, stripeMat);
+                stripe.rotation.x = -Math.PI / 2;
+                stripe.position.set(-18, 0.02, z);
+                scene.add(stripe);
+            }
+
+            // Runway Edge Lights
+            const lightGeo = new THREE.SphereGeometry(0.12, 8, 8);
+            for (let z = -75; z <= 75; z += 15) {
+                [-25.2, -10.8].forEach(x => {
+                    const lightMat = new THREE.MeshStandardMaterial({
+                        color: 0xffaa00,
+                        emissive: 0xff8800,
+                        emissiveIntensity: 0.2
+                    });
+                    const pLight = new THREE.Mesh(lightGeo, lightMat);
+                    pLight.position.set(x, 0.15, z);
+                    scene.add(pLight);
+
+                    // Point Light for night glow
+                    const pointL = new THREE.PointLight(0xffaa00, 0, 8);
+                    pointL.position.set(x, 0.3, z);
+                    scene.add(pointL);
+
+                    runwayLights.push({ mesh: pLight, light: pointL });
+                });
+            }
+
+            // FAA Standard Windsock Circle Base Segment Markings
+            const circleGeo = new THREE.RingGeometry(3.8, 4.2, 32);
+            const circleMat = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
+            circleSegmentMesh = new THREE.Mesh(circleGeo, circleMat);
+            circleSegmentMesh.rotation.x = -Math.PI / 2;
+            circleSegmentMesh.position.set(0, 0.02, 0);
+            scene.add(circleSegmentMesh);
+
+            // Cardinal Direction Markers (N, E, S, W) on ground
+            const cardinalDirections = [
+                { text: 'N', x: 0, z: -5.2 },
+                { text: 'S', x: 0, z: 5.2 },
+                { text: 'E', x: 5.2, z: 0 },
+                { text: 'W', x: -5.2, z: 0 }
+            ];
+
+            cardinalDirections.forEach(cd => {
+                const canvas = document.createElement('canvas');
+                canvas.width = 128;
+                canvas.height = 128;
+                const ctx = canvas.getContext('2d');
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'Bold 80px Inter, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(cd.text, 64, 64);
+
+                const texture = new THREE.CanvasTexture(canvas);
+                const markerGeo = new THREE.PlaneGeometry(1.2, 1.2);
+                const markerMat = new THREE.MeshBasicMaterial({ map: texture, transparent: true });
+                const marker = new THREE.Mesh(markerGeo, markerMat);
+                marker.rotation.x = -Math.PI / 2;
+                marker.position.set(cd.x, 0.03, cd.z);
+                scene.add(marker);
+            });
+        }
+
+        function createWindsockPoleAndMesh() {
+            // Main Galvanized Steel Mounting Pole
+            const poleGroup = new THREE.Group();
+
+            const poleGeo = new THREE.CylinderGeometry(0.08, 0.1, 4.5, 16);
+            const poleMat = new THREE.MeshStandardMaterial({
+                color: 0x8899a6,
+                metalness: 0.8,
+                roughness: 0.3
+            });
+            const pole = new THREE.Mesh(poleGeo, poleMat);
+            pole.position.y = 2.25;
+            pole.castShadow = true;
+            pole.receiveShadow = true;
+            poleGroup.add(pole);
+
+            // Pole Base Plate
+            const baseGeo = new THREE.CylinderGeometry(0.3, 0.35, 0.1, 16);
+            const baseMesh = new THREE.Mesh(baseGeo, poleMat);
+            baseMesh.position.y = 0.05;
+            poleGroup.add(baseMesh);
+
+            // Swivel Head Pivot Mount at Top of Pole (Height = 4.5m)
+            swivelGroup = new THREE.Group();
+            swivelGroup.position.set(0, 4.5, 0);
+
+            // Bearing housing
+            const bearingGeo = new THREE.CylinderGeometry(0.12, 0.12, 0.3, 16);
+            const bearingMat = new THREE.MeshStandardMaterial({ color: 0x333333, metalness: 0.9, roughness: 0.2 });
+            const bearing = new THREE.Mesh(bearingGeo, bearingMat);
+            swivelGroup.add(bearing);
+
+            // Extended swivel arm holding ring away from mast pole
+            const armGeo = new THREE.CylinderGeometry(0.03, 0.03, 0.5, 8);
+            armGeo.rotateX(Math.PI / 2);
+            const armMat = new THREE.MeshStandardMaterial({ color: 0x555555, metalness: 0.8, roughness: 0.3 });
+            const armMesh = new THREE.Mesh(armGeo, armMat);
+            armMesh.position.set(0, 0.1, 0.25);
+            swivelGroup.add(armMesh);
+
+            // Counterweight on opposite side of swivel head
+            const counterWeightGeo = new THREE.BoxGeometry(0.08, 0.15, 0.2);
+            const counterWeight = new THREE.Mesh(counterWeightGeo, armMat);
+            counterWeight.position.set(0, 0.1, -0.15);
+            swivelGroup.add(counterWeight);
+
+            // Mounting Frame Hoop (Throat Ring holding open the windsock)
+            const ringGeo = new THREE.TorusGeometry(RADIUS_TOP, 0.025, 12, 32);
+            const ringMat = new THREE.MeshStandardMaterial({ color: 0xd0d0d0, metalness: 0.9, roughness: 0.2 });
+            const ringMesh = new THREE.Mesh(ringGeo, ringMat);
+            ringMesh.position.set(0, 0.1, 0.5);
+            swivelGroup.add(ringMesh);
+
+            poleGroup.add(swivelGroup);
+            scene.add(poleGroup);
+
+            // Windsock Cloth Mesh Construction
+            // We build a custom cylinder geometry with dynamic vertex updates
+            const sockGeo = new THREE.CylinderGeometry(
+                RADIUS_TOP,
+                RADIUS_BOTTOM,
+                SOCK_LENGTH,
+                RADIAL_SEGMENTS,
+                HEIGHT_SEGMENTS,
+                true // Open-ended cone
+            );
+
+            // Rotate geometry so length lies along local Z axis (0 to +SOCK_LENGTH)
+            sockGeo.rotateX(Math.PI / 2);
+            sockGeo.translate(0, 0, SOCK_LENGTH / 2);
+
+            // Prepare 5 alternating stripes materials (Orange, White, Orange, White, Orange)
+            // Create texture canvas for perfect 5-stripe pattern
+            const stripeCanvas = document.createElement('canvas');
+            stripeCanvas.width = 16;
+            stripeCanvas.height = 500;
+            const sCtx = stripeCanvas.getContext('2d');
+
+            const stripeColors = ['#ff5500', '#f0f4f8', '#ff5500', '#f0f4f8', '#ff5500'];
+            const stripeHeight = 500 / 5;
+            for (let i = 0; i < 5; i++) {
+                sCtx.fillStyle = stripeColors[i];
+                sCtx.fillRect(0, i * stripeHeight, 16, stripeHeight);
+            }
+
+            const stripeTexture = new THREE.CanvasTexture(stripeCanvas);
+            stripeTexture.wrapS = THREE.RepeatWrapping;
+            stripeTexture.wrapT = THREE.ClampToEdgeWrapping;
+
+            const sockMat = new THREE.MeshStandardMaterial({
+                map: stripeTexture,
+                side: THREE.DoubleSide,
+                roughness: 0.6,
+                metalness: 0.05,
+                wireframe: false
+            });
+
+            windsockMesh = new THREE.Mesh(sockGeo, sockMat);
+            windsockMesh.position.set(0, 0.1, 0.5); // Position sock throat directly at ring center
+            windsockMesh.castShadow = true;
+            windsockMesh.receiveShadow = true;
+
+            // Store original vertex positions for physics dynamic deformations
+            windsockMesh.geometry.userData.originalPositions = sockGeo.attributes.position.clone();
+
+            swivelGroup.add(windsockMesh);
+        }
+
+        function createWindParticles() {
+            const particleCount = 200;
+            particleGeometry = new THREE.BufferGeometry();
+            particlePositions = new Float32Array(particleCount * 3);
+            particleVelocities = [];
+
+            for (let i = 0; i < particleCount; i++) {
+                // Random position around scene
+                particlePositions[i * 3] = (Math.random() - 0.5) * 30;
+                particlePositions[i * 3 + 1] = Math.random() * 8 + 0.5;
+                particlePositions[i * 3 + 2] = (Math.random() - 0.5) * 30;
+
+                particleVelocities.push({
+                    speedOffset: 0.8 + Math.random() * 0.4,
+                    yOscillation: Math.random() * Math.PI * 2
+                });
+            }
+
+            particleGeometry.setAttribute('position', new THREE.BufferAttribute(particlePositions, 3));
+
+            const particleMat = new THREE.PointsMaterial({
+                color: 0xffffff,
+                size: 0.12,
+                transparent: true,
+                opacity: 0.35,
+                blending: THREE.AdditiveBlending
+            });
+
+            windParticles = new THREE.Points(particleGeometry, particleMat);
+            scene.add(windParticles);
+        }
+
+        function updateWindsockPhysics(delta) {
+            state.time += delta;
+
+            const speed = state.windSpeed;
+            // Target angle for swivel: Wind direction is "WHERE WIND BLOWS FROM", 
+            // so windsock points opposite (DOWNWIND = direction + 180 deg)
+            const targetYaw = ((state.windDirection + 180) % 360) * (Math.PI / 180);
+
+            // Smooth interpolation (damping) for swivel head rotation
+            // At 0 knots, windsock slowly holds position; higher speed = responsive alignment
+            const damping = speed < 0.5 ? 0.3 * delta : Math.min(1.0, delta * (0.4 + speed * 0.25));
+            
+            // Add subtle turbulence jitter to swivel rotation
+            const turbJitter = (Math.sin(state.time * 3) * 0.04 + Math.cos(state.time * 5.5) * 0.02) * state.turbulence * (speed > 1 ? 1 : 0.1);
+            
+            // Shortest angle interpolation
+            let diff = targetYaw - state.sockAngle;
+            while (diff < -Math.PI) diff += Math.PI * 2;
+            while (diff > Math.PI) diff -= Math.PI * 2;
+
+            state.sockAngle += diff * damping + turbJitter * delta;
+            swivelGroup.rotation.y = state.sockAngle;
+
+            // Fabric Deformation Physics Algorithm
+            const posAttr = windsockMesh.geometry.attributes.position;
+            const origPos = windsockMesh.geometry.userData.originalPositions;
+            const vertexCount = posAttr.count;
+
+            // Compute lift fraction (0 = limp hanging down, 1 = fully horizontal at ~15 knots)
+            const maxLiftSpeed = 15.0; // knots for 100% full extension
+            const liftFactor = Math.min(1.0, speed / maxLiftSpeed);
+
+            // Overall base pitch angle:
+            // At 0 knots, base pitch is ~ -78 degrees (hanging downwards under gravity)
+            // At 15+ knots, base pitch is 0 degrees (fully horizontal)
+            const basePitch = - Math.pow(1.0 - liftFactor, 1.3) * (Math.PI * 0.43);
+
+            for (let i = 0; i < vertexCount; i++) {
+                const ox = origPos.getX(i);
+                const oy = origPos.getY(i);
+                const oz = origPos.getZ(i); // Local Z along length (0 at throat, SOCK_LENGTH at tip)
+
+                const zNorm = oz / SOCK_LENGTH; // Normalized length [0, 1]
+
+                // Additional sag angle along the sock tail
+                const sagAngle = (1.0 - liftFactor) * Math.pow(zNorm, 1.4) * 0.35;
+                
+                // Transition out of rigid vertical throat ring for first 12% of length
+                const throatRigidity = Math.min(1.0, zNorm / 0.12);
+                const effAngle = (basePitch - sagAngle) * throatRigidity;
+
+                // Flutter / wave dynamic along fabric
+                const waveFreq = 6.0 + speed * 0.5;
+                const waveSpeed = state.time * waveFreq;
+                const waveAmp = (0.005 + 0.06 * zNorm * state.turbulence) * Math.min(1.0, speed / 2.0);
+
+                const flutterY = Math.sin(waveSpeed - zNorm * 8) * waveAmp;
+                const flutterX = Math.cos(waveSpeed * 0.7 - zNorm * 6) * waveAmp * 0.7;
+
+                // Fabric inflation / volume factor:
+                // Throat (zNorm = 0) stays 100% circular attached to ring; tail deflates smoothly
+                const tailInflation = 0.5 + 0.5 * liftFactor;
+                const inflation = 1.0 - (1.0 - tailInflation) * Math.pow(zNorm, 0.6);
+
+                // Deform circular cross-section
+                const oxDeformed = ox * (0.85 + 0.15 * inflation) + flutterX;
+                const oyDeformed = oy * inflation + flutterY;
+
+                // Centerline spine curve position
+                const spineZ = oz * Math.cos(effAngle);
+                const spineY = oz * Math.sin(effAngle);
+
+                // Rotate cross section by effective pitch angle
+                const newX = oxDeformed;
+                const newY = spineY + oyDeformed * Math.cos(effAngle);
+                const newZ = spineZ - oyDeformed * Math.sin(effAngle);
+
+                posAttr.setXYZ(i, newX, newY, newZ);
+            }
+
+            posAttr.needsUpdate = true;
+            windsockMesh.geometry.computeVertexNormals();
+
+            // Update UI Gauges & Telemetry
+            updateUIReadouts(liftFactor);
+        }
+
+        function updateParticles(delta) {
+            if (!state.showParticles) {
+                windParticles.visible = false;
+                return;
+            }
+            windParticles.visible = true;
+
+            const posArr = particleGeometry.attributes.position.array;
+            const count = posArr.length / 3;
+
+            // Wind vector in world coordinates (blowing TOWARDS state.windDirection + 180)
+            const windRad = ((state.windDirection + 180) % 360) * (Math.PI / 180);
+            const dirX = Math.sin(windRad);
+            const dirZ = Math.cos(windRad);
+
+            const speed = Math.max(1, state.windSpeed);
+
+            for (let i = 0; i < count; i++) {
+                const idx = i * 3;
+                const v = particleVelocities[i];
+
+                // Move particle along wind direction vector
+                posArr[idx] += dirX * speed * v.speedOffset * delta * 0.8;
+                posArr[idx + 1] += Math.sin(state.time * 2 + v.yOscillation) * 0.01;
+                posArr[idx + 2] += dirZ * speed * v.speedOffset * delta * 0.8;
+
+                // Wrap particles within boundary box
+                if (Math.abs(posArr[idx]) > 30 || Math.abs(posArr[idx + 2]) > 30 || posArr[idx + 1] < 0 || posArr[idx + 1] > 12) {
+                    // Reset to windward side
+                    posArr[idx] = -dirX * 25 + (Math.random() - 0.5) * 15;
+                    posArr[idx + 1] = Math.random() * 7 + 0.5;
+                    posArr[idx + 2] = -dirZ * 25 + (Math.random() - 0.5) * 15;
+                }
+            }
+
+            particleGeometry.attributes.position.needsUpdate = true;
+        }
+
+        function updateUIReadouts(liftFactor) {
+            // Extension Percentage
+            const extPercent = Math.round(liftFactor * 100);
+            document.getElementById('extension-display').innerText = extPercent;
+
+            // Stripe Extension Estimator
+            let stripeText = 'Limp (0 kt)';
+            if (state.windSpeed >= 15) stripeText = '5 / 5 Stripes (15+ kt)';
+            else if (state.windSpeed >= 12) stripeText = '4 / 5 Stripes (~12 kt)';
+            else if (state.windSpeed >= 9) stripeText = '3 / 5 Stripes (~9 kt)';
+            else if (state.windSpeed >= 6) stripeText = '2 / 5 Stripes (~6 kt)';
+            else if (state.windSpeed >= 3) stripeText = '1 / 5 Stripe (~3 kt)';
+            
+            document.getElementById('stripe-count-display').innerText = stripeText;
+
+            // Compass Icon rotation
+            const compassIcon = document.getElementById('compass-icon');
+            if (compassIcon) {
+                compassIcon.style.transform = `rotate(${state.windDirection}deg)`;
+            }
+        }
+
+        // Helper to convert degree heading to cardinal string
+        function getCardinalDirection(angle) {
+            const directions = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
+            const index = Math.round((angle % 360) / 22.5) % 16;
+            return directions[index];
+        }
+
+        function setupEventListeners() {
+            // Wind Speed Slider
+            const speedInput = document.getElementById('wind-speed');
+            speedInput.addEventListener('input', (e) => {
+                state.windSpeed = parseFloat(e.target.value);
+                document.getElementById('speed-val-display').innerText = state.windSpeed.toFixed(1);
+                document.getElementById('speed-kmh-display').innerText = Math.round(state.windSpeed * 1.852);
+                document.getElementById('slider-speed-label').innerText = `${state.windSpeed.toFixed(1)} knots`;
+            });
+
+            // Wind Direction Slider
+            const dirInput = document.getElementById('wind-dir');
+            dirInput.addEventListener('input', (e) => {
+                state.windDirection = parseInt(e.target.value);
+                const cardinal = getCardinalDirection(state.windDirection);
+                document.getElementById('dir-val-display').innerText = state.windDirection;
+                document.getElementById('cardinal-display').innerText = cardinal;
+                document.getElementById('slider-dir-label').innerText = `${state.windDirection}° (${cardinal})`;
+            });
+
+            // Turbulence Slider
+            const turbInput = document.getElementById('wind-turb');
+            turbInput.addEventListener('input', (e) => {
+                state.turbulence = parseFloat(e.target.value);
+                let turbText = 'Low';
+                if (state.turbulence > 0.7) turbText = 'Severe / Heavy';
+                else if (state.turbulence > 0.35) turbText = 'Moderate';
+                document.getElementById('slider-turb-label').innerText = turbText;
+            });
+
+            // Preset Buttons
+            document.querySelectorAll('.preset-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const spd = parseFloat(btn.dataset.speed);
+                    const dir = parseInt(btn.dataset.dir);
+                    const turb = parseFloat(btn.dataset.turb);
+
+                    speedInput.value = spd;
+                    speedInput.dispatchEvent(new Event('input'));
+
+                    dirInput.value = dir;
+                    dirInput.dispatchEvent(new Event('input'));
+
+                    turbInput.value = turb;
+                    turbInput.dispatchEvent(new Event('input'));
+                });
+            });
+
+            // Toggle Visual Particles
+            document.getElementById('toggle-particles').addEventListener('change', (e) => {
+                state.showParticles = e.target.checked;
+            });
+
+            // Toggle Night Mode
+            document.getElementById('toggle-night').addEventListener('change', (e) => {
+                state.nightMode = e.target.checked;
+                if (state.nightMode) {
+                    scene.background.setHex(0x0a0f1d);
+                    scene.fog.color.setHex(0x0a0f1d);
+                    ambientLight.intensity = 0.15;
+                    directionalLight.intensity = 0.2;
+                    runwayLights.forEach(rl => {
+                        rl.mesh.material.emissiveIntensity = 1.0;
+                        rl.light.intensity = 2.0;
+                    });
+                } else {
+                    scene.background.setHex(0x87CEEB);
+                    scene.fog.color.setHex(0x87CEEB);
+                    ambientLight.intensity = 0.6;
+                    directionalLight.intensity = 1.2;
+                    runwayLights.forEach(rl => {
+                        rl.mesh.material.emissiveIntensity = 0.2;
+                        rl.light.intensity = 0;
+                    });
+                }
+            });
+
+            // Toggle Wireframe Mode
+            document.getElementById('toggle-wireframe').addEventListener('change', (e) => {
+                state.wireframe = e.target.checked;
+                windsockMesh.material.wireframe = state.wireframe;
+            });
+
+            // Camera View Preset Buttons
+            document.getElementById('cam-orbit').addEventListener('click', () => {
+                animateCamera(new THREE.Vector3(6, 4, 8), new THREE.Vector3(0, 2.5, 0));
+            });
+
+            document.getElementById('cam-close').addEventListener('click', () => {
+                animateCamera(new THREE.Vector3(1.5, 4.8, 2.8), new THREE.Vector3(0, 4.3, 0));
+            });
+
+            document.getElementById('cam-runway').addEventListener('click', () => {
+                animateCamera(new THREE.Vector3(-18, 3, 30), new THREE.Vector3(-18, 2, -20));
+            });
+
+            document.getElementById('cam-top').addEventListener('click', () => {
+                animateCamera(new THREE.Vector3(0, 18, 0.01), new THREE.Vector3(0, 0, 0));
+            });
+
+            // Toggle Info Modal
+            const infoModal = document.getElementById('info-modal');
+            document.getElementById('toggle-info-btn').addEventListener('click', () => {
+                infoModal.classList.toggle('hidden');
+            });
+        }
+
+        // Camera Smooth Transition Helper
+        function animateCamera(targetPos, targetLookAt) {
+            const startPos = camera.position.clone();
+            const startTarget = controls.target.clone();
+            let duration = 800; // ms
+            let startTime = performance.now();
+
+            function updateCam(now) {
+                let elapsed = now - startTime;
+                let t = Math.min(1.0, elapsed / duration);
+                // Smooth cubic easing
+                let ease = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+
+                camera.position.lerpVectors(startPos, targetPos, ease);
+                controls.target.lerpVectors(startTarget, targetLookAt, ease);
+                controls.update();
+
+                if (t < 1.0) {
+                    requestAnimationFrame(updateCam);
+                }
+            }
+
+            requestAnimationFrame(updateCam);
+        }
+
+        function onWindowResize() {
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+        }
+
+        let clock = new THREE.Clock();
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const delta = clock.getDelta();
+
+            // Physics & Particle Updates
+            updateWindsockPhysics(delta);
+            updateParticles(delta);
+
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        // Ensure clean startup after document load
+        window.onload = function() {
+            initScene();
+            setupEventListeners();
+            animate();
+        };
+    </script>
+</body>
+</html>
